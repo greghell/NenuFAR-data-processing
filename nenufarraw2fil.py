@@ -79,6 +79,9 @@ parser = argparse.ArgumentParser(description="Converts NenuFAR-raw data to Filte
 parser.add_argument('indir', type=str, help='NenuFAR raw files directory');
 parser.add_argument("-f", type=float, dest='f_res', help="frequency resolution in Hz", default=1.);
 parser.add_argument("-t", type=float, dest='t_res', help="time resolution in s", default=1.);
+parser.add_argument("-o", type=str, dest='outdir', help="output directory");
+parser.add_argument('-p', type=int, dest='polnum', choices=[0,1], help="one single polarization only (polarization number)");
+parser.add_argument("-b", type=int, dest='bmch', help="beam number (for single beam extraction)");
 args = parser.parse_args();
 
 indir = Path(args.indir);
@@ -133,6 +136,12 @@ nb_samples = header['nb_samples']
 bytespersample = header['bytespersample']
 
 print('\n'+str(nobpb)+' beams found');
+if args.bmch is not None:
+    if args.bmch < 0 or args.bmch > nobpb-1:
+        print('\n INVALID BEAM NUMBER -- exiting...');
+        print('beam number should be between 0 and '+str(nobpb-1));
+        sys.exit();
+
 print(str(nb_samples)+' samples / beam = '+str(nb_samples/(200./1024.*1e6))+' s of data per bloc');
 
 bytes_in = bytespersample * nb_samples * nobpb
@@ -159,14 +168,28 @@ with open(fnames_raw[0].name,'rb') as fd_raw:
        count=1,
        dtype=dt_header,
        )[0]
-chan_start, chan_stop = header['lbc_alloc'][0][-1], header['lbc_alloc'][-1][-1];
-print('frequency coverage : '+str(chan_start * 200.0/1024)+ ' - '+str(chan_stop * 200.0/1024)+' MHz');
-    
+
 data = np.memmap(fnames_raw[0].name,
  dtype=dt_block,
  mode='r',
  offset=dt_header.itemsize,
  )
+
+print(str(np.shape(data)[0])+' data bloc(s) found');
+print('total data time span : '+str(np.shape(data)[0]*(nb_samples/(200./1024.*1e6)))+' s');
+
+if (np.shape(data)[0]*nb_samples) < nRes:
+    print('requested frequency resolution higher than data set size... exiting...');
+    sys.exit();
+
+if (np.shape(data)[0]*(nb_samples/(200./1024.*1e6))) < args.t_res:
+    print('requested time integration longer than data set... exiting...');
+    sys.exit();
+
+
+chan_start, chan_stop = header['lbc_alloc'][0][-1], header['lbc_alloc'][-1][-1];
+print('frequency coverage : '+str(chan_start * 200.0/1024)+ ' - '+str(chan_stop * 200.0/1024)+' MHz');
+    
 
 with open(fnames_parset[0].name,'r') as fparset:
     currline = ' ';
@@ -185,7 +208,13 @@ with open(fnames_parset[0].name,'r') as fparset:
             srcname = currline[currline.find('=')+1:-1];
         linenbr += 1;
 
-os.chdir(args.indir);
+if args.outdir is not None:
+    if not os.path.exists(args.outdir):
+        os.mkdir(args.outdir);
+    os.chdir(args.outdir);
+else:
+    os.chdir(args.indir);
+
 if not os.path.exists('fil_files'):
     os.mkdir('fil_files');
 os.chdir('fil_files');
@@ -196,11 +225,21 @@ fftlen = 1;
 nof_polcpx = 4;
 nfft = len(data[0]['data']) // nobpb // fftlen // nof_polcpx;
 
-for beam_nbr in range(nobpb):
-    print('\n***********************');
-    print('processing beam # '+str(beam_nbr+1)+' / '+str(nobpb));
+if args.bmch is None:
+    beams_to_process = range(nobpb);
+else:
+    beams_to_process = range(args.bmch,args.bmch+1);
 
-    fname =  fnames_raw[0].name.strip('.raw') + '_beam_' + str(beam_nbr) + '_' + str(int(200./1024.*1e6/nRes)) + 'Hz_' + str(int(nInt*nRes/(200./1024.*1e6))) + 's.fil';
+for beam_nbr in beams_to_process:
+    print('\n***********************');
+    if args.bmch is None:
+        print('processing beam # '+str(beam_nbr+1)+' / '+str(nobpb));
+    else:
+        print('processing beam # '+str(beam_nbr));
+    if args.polnum is None:
+        fname =  fnames_raw[0].name.strip('.raw') + '_beam_' + str(beam_nbr) + '_' + str(int(200./1024.*1e6/nRes)) + 'Hz_' + str(int(nInt*nRes/(200./1024.*1e6))) + 's.fil';
+    else:
+        fname =  fnames_raw[0].name.strip('.raw') + '_beam_' + str(beam_nbr) + '_' + str(int(200./1024.*1e6/nRes)) + 'Hz_' + str(int(nInt*nRes/(200./1024.*1e6))) + 's_pol_'+ str(args.polnum) +'.fil';
     print('writing data to '+fname);
     
     f = {b'telescope_id': b'66',    # NenuFAR
@@ -241,32 +280,40 @@ for beam_nbr in range(nobpb):
         tmp = data[block_num]['data'];
         tmp.shape = (nfft, fftlen, nobpb, nof_polcpx);
         tmp = tmp.astype('float32').view('complex64');
-        full_sigXX = np.append(full_sigXX,tmp[:,0,beam_nbr,0]);
-        full_sigYY = np.append(full_sigYY,tmp[:,0,beam_nbr,1]);
+        if args.polnum != 1:
+            full_sigXX = np.append(full_sigXX,tmp[:,0,beam_nbr,0]);
+        if args.polnum != 0:
+            full_sigYY = np.append(full_sigYY,tmp[:,0,beam_nbr,1]);
         
-    nSpec = int(np.floor(len(full_sigXX)/nRes/nInt));
+    nSpec = max(int(np.floor(len(full_sigXX)/nRes/nInt)),int(np.floor(len(full_sigYY)/nRes/nInt)));
     
-    full_sigXX = full_sigXX - np.mean(full_sigXX);
-    full_sigXX = np.reshape(full_sigXX[:nRes*nInt*nSpec],(nRes,nInt*nSpec),order='F');
-    full_sigXX = np.abs(np.fft.fft(full_sigXX,axis=0))**2;
-    full_sigXX = np.fft.fftshift(full_sigXX,axes=0);
+    if args.polnum != 1:
+        full_sigXX = full_sigXX - np.mean(full_sigXX);
+        full_sigXX = np.reshape(full_sigXX[:nRes*nInt*nSpec],(nRes,nInt*nSpec),order='F');
+        full_sigXX = np.abs(np.fft.fft(full_sigXX,axis=0))**2;
+        full_sigXX = np.fft.fftshift(full_sigXX,axes=0);
     
-    full_sigYY = full_sigYY - np.mean(full_sigYY);
-    full_sigYY = np.reshape(full_sigYY[:nRes*nInt*nSpec],(nRes,nInt*nSpec),order='F');
-    full_sigYY = np.abs(np.fft.fft(full_sigYY,axis=0))**2;
-    full_sigYY = np.fft.fftshift(full_sigYY,axes=0);
+    if args.polnum != 0:
+        full_sigYY = full_sigYY - np.mean(full_sigYY);
+        full_sigYY = np.reshape(full_sigYY[:nRes*nInt*nSpec],(nRes,nInt*nSpec),order='F');
+        full_sigYY = np.abs(np.fft.fft(full_sigYY,axis=0))**2;
+        full_sigYY = np.fft.fftshift(full_sigYY,axes=0);
     
     stokesIdata = np.zeros((nRes,nSpec));
     
     for k in range(nSpec):
-        stokesIdata[:,k] = np.mean(full_sigXX[:,k*nInt:(k+1)*nInt], axis=1) + np.mean(full_sigYY[:,k*nInt:(k+1)*nInt], axis=1)
+        if args.polnum is None:
+            stokesIdata[:,k] = np.mean(full_sigXX[:,k*nInt:(k+1)*nInt], axis=1) + np.mean(full_sigYY[:,k*nInt:(k+1)*nInt], axis=1);
+        elif args.polnum == 0:
+            stokesIdata[:,k] = np.mean(full_sigXX[:,k*nInt:(k+1)*nInt], axis=1);
+        elif args.polnum == 1:
+            stokesIdata[:,k] = np.mean(full_sigYY[:,k*nInt:(k+1)*nInt], axis=1);
         
     maxtot = np.max(stokesIdata);
     mintot = np.min(stokesIdata);
     
     stokesIdata -= mintot;
     stokesIdata *= (250./(maxtot-mintot));
-#    stokesIdata -= 125;
     
     for k in range(nSpec):
         stokesIdata[:,k].astype('uint8').tofile(outfile);
