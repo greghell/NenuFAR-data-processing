@@ -1,6 +1,3 @@
-## processes raw files
-## 
-
 import argparse
 import numpy as np
 import cupy as cp
@@ -14,6 +11,7 @@ import matplotlib.pyplot as plt
 
 workdirec =  sys.argv[1];
 #workdirec = '/datax2/devfil/';
+resval =  float(sys.argv[2]);   # resolution in Hz
 
 directory = 'beam_data';
 path = os.path.join(workdirec,directory);
@@ -82,7 +80,7 @@ for fname in fnames_raw:
     nfft = len(data[0]['data']) // nobpb // fftlen // nof_polcpx;
     # nfft = 87296
     nBlocks = len(data);
-    nRes = int(2**np.floor(np.log2(200.1e6/1024.)));    ## resolution about 1 Hz
+    nRes = int(2**np.floor(np.log2(200.1e6/1024./resval)));    ## resolution about 1 Hz
     NumBck = int(np.ceil(nRes / nfft)); ## reads multiple blocks to reach the desired resolution
 
     outfiles = [];
@@ -141,7 +139,7 @@ for fname in fnames_raw:
 
 ## splice files together
 
-filfiles = glob.glob(os.path.join(workdirec,directory,'*.fil'));
+filfiles = glob.glob(os.path.join(workdirec,directory,'lane*.fil'));
 
 fnames_parset = sorted(list(glob.glob(workdirec+'*.parset')));
 if fnames_parset == []:
@@ -235,3 +233,7 @@ for nSource in range(nBeams):
         
     for nBeam in range(numfiles):
         infiles[nBeam].close();
+        
+## remove non-spliced fil files
+for fname in filfiles:
+    os.remove(fname);
