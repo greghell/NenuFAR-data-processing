@@ -139,6 +139,68 @@ for fname in fnames_raw:
 
 ## splice files together
 
+
+header_keyword_types = {
+    b'telescope_id' : b'<l',
+    b'machine_id'   : b'<l',
+    b'data_type'    : b'<l',
+    b'barycentric'  : b'<l',
+    b'pulsarcentric': b'<l',
+    b'nbits'        : b'<l',
+    b'nsamples'     : b'<l',
+    b'nchans'       : b'<l',
+    b'nifs'         : b'<l',
+    b'nbeams'       : b'<l',
+    b'ibeam'        : b'<l',
+    b'rawdatafile'  : b'str',
+    b'source_name'  : b'str',
+    b'az_start'     : b'<d',
+    b'za_start'     : b'<d',
+    b'tstart'       : b'<d',
+    b'tsamp'        : b'<d',
+    b'fch1'         : b'<d',
+    b'foff'         : b'<d',
+    b'refdm'        : b'<d',
+    b'period'       : b'<d',
+    b'src_raj'      : b'<d',
+    b'src_dej'      : b'<d',
+#    b'src_raj'      : b'angle',
+#    b'src_dej'      : b'angle',
+    }
+    
+def to_sigproc_keyword(keyword, value=None):
+    """ Generate a serialized string for a sigproc keyword:value pair
+    If value=None, just the keyword will be written with no payload.
+    Data type is inferred by keyword name (via a lookup table)
+    Args:
+        keyword (str): Keyword to write
+        value (None, float, str, double or angle): value to write to file
+    Returns:
+        value_str (str): serialized string to write to file.
+    """
+
+    keyword = bytes(keyword)
+
+    if value is None:
+        return np.int32(len(keyword)).tostring() + keyword
+    else:
+        dtype = header_keyword_types[keyword]
+
+        dtype_to_type = {b'<l'  : np.int32,
+                         b'str' : str,
+                         b'<d'  : np.float64}#,
+#                         b'angle' : to_sigproc_angle}
+
+        value_dtype = dtype_to_type[dtype]
+
+        if value_dtype is str:
+            return np.int32(len(keyword)).tostring() + keyword + np.int32(len(value)).tostring() + value
+        else:
+            return np.int32(len(keyword)).tostring() + keyword + value_dtype(value).tostring()
+
+
+
+
 filfiles = glob.glob(os.path.join(workdirec,directory,'lane*.fil'));
 
 fnames_parset = sorted(list(glob.glob(workdirec+'*.parset')));
@@ -205,8 +267,39 @@ for nSource in range(nBeams):
             print(str(mc));
     print('');
     
+    
+    # prepare header
+    f = {b'telescope_id': b'66',    # NenuFAR
+      b'nbits': str(8).encode(),       # TBD
+      b'source_name': targetname.encode(),   # read in parset AnaBeam[0].directionType
+      b'data_type': b'1',       # look into that
+      b'nchans': str(nRes * len(channum)).encode(), # 2**17 x number of channels
+      b'machine_id': b'99', # ??
+      b'tsamp': str(1./(200.*1e6/1024.) * NumBck*nfft).encode(),
+      b'foff': str(200./1024./nRes).encode(),    # 200./1024./2**18
+      b'src_raj': str(ang1).encode(),
+      b'src_dej': str(ang2).encode(),
+      b'tstart': str(Time(timeobsstr).mjd).encode(),
+      b'nbeams': b'1',
+      b'fch1': str(chanlow*200.0/1024 + 200./1024./2).encode(),
+      b'nifs': str(len(channum)).encode()}
+
+    header_string = b'';
+    header_string += to_sigproc_keyword(b'HEADER_START');
+    
+    for keyword in f.keys():
+        if keyword not in header_keyword_types.keys():
+            pass;
+        else:
+            header_string += to_sigproc_keyword(keyword, f[keyword]);
+        
+    header_string += to_sigproc_keyword(b'HEADER_END');
+    
+    
+    
     Filfname = os.path.join(workdirec, directory, str(timeobs.year) + str(timeobs.month) + str(timeobs.day) + str(timeobs.hour) + str(timeobs.minute) + str(timeobs.second) + '_' + targetname.strip('"') + '.fil'); # FIL file name
     fout = open(Filfname, 'wb');
+    fout.write(header_string);
     print('writing to ' + Filfname);
     
     infiles = [];
