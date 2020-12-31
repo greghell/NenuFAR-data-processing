@@ -1,9 +1,3 @@
-## processes raw files, produces spliced fil file per target
-## 1st arg : directory containing raw files
-## 2nd arg : frequency resolution in Hz
-## warning : deletes raw files and temporary fil files
-
-
 import argparse
 import numpy as np
 import cupy as cp
@@ -14,6 +8,7 @@ import os
 from astropy.time import Time
 import glob
 import matplotlib.pyplot as plt
+import datetime
 
 workdirec =  sys.argv[1];
 #workdirec = '/datax2/devfil/';
@@ -273,6 +268,7 @@ for nSource in range(nBeams):
             print(str(mc));
     print('');
     
+    channum = range(chanlow,chanhi+1);
     
     # prepare header
     f = {b'telescope_id': b'66',    # NenuFAR
@@ -319,7 +315,6 @@ for nSource in range(nBeams):
     nIdx = 0;
     smallfile = np.argmin(np.array(fsizes)[np.nonzero(fsizes)[0]]);
     numfiles = len(infiles);
-    channum = range(chanlow,chanhi+1);
     while infiles[smallfile].read(1):
         print('writing spectrum #'+str(nIdx));
         for k in range(numfiles):
