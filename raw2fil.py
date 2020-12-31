@@ -1,3 +1,9 @@
+## processes raw files, produces spliced fil file per target
+## 1st arg : directory containing raw files
+## 2nd arg : frequency resolution in Hz
+## warning : deletes raw files and temporary fil files
+
+
 import argparse
 import numpy as np
 import cupy as cp
