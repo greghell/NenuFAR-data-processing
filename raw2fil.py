@@ -9,10 +9,16 @@ from astropy.time import Time
 import glob
 import matplotlib.pyplot as plt
 import datetime
+import logging
 
 workdirec =  sys.argv[1];
 #workdirec = '/datax2/devfil/';
 resval =  float(sys.argv[2]);   # resolution in Hz
+
+logging.basicConfig(level=logging.INFO, format='%(message)s');
+logger = logging.getLogger();
+logger.addHandler(logging.FileHandler(os.path.join(workdirec,'logreduce.log'), 'a'));
+print = logger.info;
 
 directory = 'beam_data';
 path = os.path.join(workdirec,directory);
@@ -102,7 +108,7 @@ for fname in fnames_raw:
     nIter = int(np.floor(nBlocks/NumBck));
     for nbck in range(nIter):
         
-        print('processing block '+str(nbck+1)+' / '+str(nIter));
+#        print('processing block '+str(nbck+1)+' / '+str(nIter));
         dset = data[nbck*NumBck:(nbck+1)*NumBck]['data'];
         dset.shape = (NumBck,nfft, fftlen, nobpb, nof_polcpx);
         dset = np.concatenate((dset),axis=0);
@@ -114,16 +120,19 @@ for fname in fnames_raw:
             cp.power(dsetft[:,:,:,2].imag + dsetft[:,:,:,3].real,2);
             
         spec = cp.fft.fftshift(spec,axes=0);
-        
-        maxes = cp.max(spec,axis=0);
 
-        if nbck == 0:
-            # set up scales for spectra min max spec
-            fac = 200. / maxes;
+### I remove scaling because not all beamlets start at the same time        
+#        maxes = cp.max(spec,axis=0);
+#
+#        if nbck == 0:
+#            # set up scales for spectra min max spec
+#            fac = 200. / maxes;
                 
         for nBeam in range(header[0]):
-            if maxes[0,nBeam] != 0:
-                outfiles[nBeam].write(cp.asnumpy(spec[:,0,nBeam]*fac[0,nBeam]).astype(np.uint8));
+#            if maxes[0,nBeam] != 0:
+            if cp.sum(spec[:,0,nBeam]) != 0:
+#                outfiles[nBeam].write(cp.asnumpy(spec[:,0,nBeam]*fac[0,nBeam]).astype(np.uint8));
+                outfiles[nBeam].write(cp.asnumpy(spec[:,0,nBeam]).astype(np.uint32));
                 
     for nBeam in range(header[0]):
         outfiles[nBeam].close();
@@ -134,8 +143,8 @@ for fname in fnames_raw:
 
 
 ## delete raw files
-for fname in fnames_raw:
-    os.remove(fname);
+#for fname in fnames_raw:
+#    os.remove(fname);
 
 
 ## splice files together
@@ -272,7 +281,7 @@ for nSource in range(nBeams):
     
     # prepare header
     f = {b'telescope_id': b'66',    # NenuFAR
-      b'nbits': str(8).encode(),       # TBD
+      b'nbits': str(32).encode(),       # TBD
       b'source_name': targetname.encode(),   # read in parset AnaBeam[0].directionType
       b'data_type': b'1',       # look into that
       b'nchans': str(nRes * len(channum)).encode(), # 2**17 x number of channels
@@ -316,18 +325,18 @@ for nSource in range(nBeams):
     smallfile = np.argmin(np.array(fsizes)[np.nonzero(fsizes)[0]]);
     numfiles = len(infiles);
     while infiles[smallfile].read(1):
-        print('writing spectrum #'+str(nIdx));
+#        print('writing spectrum #'+str(nIdx));
         for k in range(numfiles):
             if channum[k] in misschan:
-                fout.write(np.zeros((nRes)).astype(np.uint8));
+                fout.write(np.zeros((nRes)).astype(np.uint32));
             else:
-                infiles[k].seek(nRes*nIdx)
-                fout.write(infiles[k].read(nRes));
+                infiles[k].seek(int(4*nRes*nIdx))
+                fout.write(infiles[k].read(int(4*nRes)));
         nIdx += 1;
         
     for nBeam in range(numfiles):
         infiles[nBeam].close();
         
 ## remove non-spliced fil files
-for fname in filfiles:
-    os.remove(fname);
+#for fname in filfiles:
+#    os.remove(fname);
