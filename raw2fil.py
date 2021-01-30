@@ -1,3 +1,7 @@
+# reads nenufar raw file and generate fil files
+# python raw2fil.py /datax2/devfil/ 1.0
+# arguments : directory containing the raw files and frequency resolution
+
 import argparse
 import numpy as np
 import cupy as cp
