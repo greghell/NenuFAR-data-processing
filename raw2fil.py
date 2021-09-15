@@ -116,6 +116,8 @@ for fname in fnames_raw:
         dset = data[nbck*NumBck:(nbck+1)*NumBck]['data'];
         dset.shape = (NumBck,nfft, fftlen, nobpb, nof_polcpx);
         dset = np.concatenate((dset),axis=0);
+        nonzeroidx = np.where(np.sum(np.sum(dset,axis=0),axis=-1)[0,:]!=0)[0];
+        dset = dset[:,:,nonzeroidx,:];
         dsetft = cp.fft.fft(cp.asarray(dset),n=nRes,axis=0);
 
         spec = cp.power(dsetft[:,:,:,0].real - dsetft[:,:,:,1].imag,2)+\
@@ -125,18 +127,8 @@ for fname in fnames_raw:
             
         spec = cp.fft.fftshift(spec,axes=0);
 
-### I remove scaling because not all beamlets start at the same time        
-#        maxes = cp.max(spec,axis=0);
-#
-#        if nbck == 0:
-#            # set up scales for spectra min max spec
-#            fac = 200. / maxes;
-                
-        for nBeam in range(header[0]):
-#            if maxes[0,nBeam] != 0:
-            if cp.sum(spec[:,0,nBeam]) != 0:
-#                outfiles[nBeam].write(cp.asnumpy(spec[:,0,nBeam]*fac[0,nBeam]).astype(np.uint8));
-                outfiles[nBeam].write(cp.asnumpy(spec[:,0,nBeam]).astype(np.uint32));
+        for nBeam in range(spec.shape[0]):
+            outfiles[nonzeroidx[nBeam]].write(cp.asnumpy(spec[:,0,nBeam]).astype(np.uint32));
                 
     for nBeam in range(header[0]):
         outfiles[nBeam].close();
