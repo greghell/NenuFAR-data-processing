@@ -130,7 +130,7 @@ for fname in fnames_raw:
         for nBeam in range(spec.shape[0]):
             outfiles[nonzeroidx[nBeam]].write(cp.asnumpy(spec[:,0,nBeam]).astype(np.uint32));
                 
-    for nBeam in range(header[0]):
+    for nBeam in range(header[-1]):
         outfiles[nBeam].close();
         
     stop = time.time();
